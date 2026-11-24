@@ -69,7 +69,7 @@ String _concatLine(String file) {
 
 class DownloadMerge extends ChangeNotifier {
   DownloadMerge(this.repository, {MediaExecutor? executor})
-    : executor = executor ?? FFmpegExecutor();
+    : executor = executor ?? createMediaExecutor();
 
   final AppRepository repository;
   final MediaExecutor executor;

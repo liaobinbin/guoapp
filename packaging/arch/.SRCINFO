@@ -1,0 +1,19 @@
+pkgbase = guoapp-bin
+	pkgdesc = 独立运行的多端短剧应用
+	pkgver = 2.0.4+116
+	pkgrel = 1
+	url = https://github.com/liaobinbin/guoapp
+	arch = x86_64
+	license = GPL-3.0-only
+	depends = gtk3
+	depends = mpv
+	depends = json-glib
+	depends = libepoxy
+	depends = ffmpeg
+	provides = guoapp
+	conflicts = guoapp
+	options = !strip
+	source = guoapp-2.0.4+116-linux-x64.tar.gz::https://github.com/liaobinbin/guoapp/releases/download/app-v2.0.4-116/guoapp-2.0.4+116-linux-x64.tar.gz
+	sha256sums = SKIP
+
+pkgname = guoapp-bin

@@ -13,7 +13,7 @@ import 'models.dart';
 
 class DownloadConverter extends ChangeNotifier {
   DownloadConverter(this.repository, this.downloads, {MediaExecutor? executor})
-    : executor = executor ?? FFmpegExecutor() {
+    : executor = executor ?? createMediaExecutor() {
     downloads.addListener(_sync);
     if (Platform.isIOS) {
       _lifecycle = AppLifecycleListener(onPause: _suspend, onResume: _resume);

@@ -9,7 +9,7 @@ from app_build import app, prepare_bundled_modules
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--platform', choices=['android', 'windows', 'darwin'], required=True)
+parser.add_argument('--platform', choices=['android', 'linux', 'windows', 'darwin'], required=True)
 parser.add_argument('--abi', action='append', choices=['arm64-v8a', 'armeabi-v7a', 'x86_64'])
 parser.add_argument('--bundle', action='append', default=[], help='内置模块目录，可多次指定；也可用逗号分隔写在环境变量 BUNDLED_MODULES 里')
 options = parser.parse_args()
@@ -63,6 +63,13 @@ if options.platform == 'android':
         if architecture == 'arm':
             extra['GOARM'] = '7'
         build('android', architecture, compiler, output, extra)
+elif options.platform == 'linux':
+    if platform.system() != 'Linux':
+        raise SystemExit('Linux 核心需要在 Linux 上构建。')
+    compiler = shutil.which('gcc') or shutil.which('clang')
+    if not compiler:
+        raise SystemExit('请安装 GCC 或 Clang。')
+    build('linux', 'amd64', compiler, root / 'linux' / 'libduanju_core.so')
 elif options.platform == 'windows':
     compiler = shutil.which('x86_64-w64-mingw32-gcc') or (shutil.which('gcc') if platform.system() == 'Windows' else None)
     if not compiler:

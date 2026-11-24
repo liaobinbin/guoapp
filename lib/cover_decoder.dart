@@ -9,7 +9,7 @@ import 'media_pipeline.dart';
 
 class CoverDecoder {
   CoverDecoder({MediaExecutor Function()? createExecutor})
-    : _createExecutor = createExecutor ?? FFmpegExecutor.new;
+    : _createExecutor = createExecutor ?? createMediaExecutor;
   static const _workers = 3;
   final MediaExecutor Function() _createExecutor;
   final _pending = <String, Future<String>>{};

@@ -45,7 +45,7 @@ class MergeQueue extends ChangeNotifier {
     MediaExecutor Function()? executor,
     MergeSave? save,
     DateTime Function()? now,
-  }) : _executor = executor ?? FFmpegExecutor.new,
+  }) : _executor = executor ?? createMediaExecutor,
        _save = save ?? saveMerge,
        _now = now ?? DateTime.now;
 

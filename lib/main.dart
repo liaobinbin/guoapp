@@ -52,6 +52,19 @@ Future<void> main() async {
       );
     } catch (_) {}
   }
+  if (Platform.isLinux) {
+    await windowManager.ensureInitialized();
+    try {
+      await windowManager.waitUntilReadyToShow(
+        const WindowOptions(
+          size: Size(1280, 800),
+          minimumSize: desktopMinimumSize,
+          center: true,
+        ),
+        () => windowManager.show(),
+      );
+    } catch (_) {}
+  }
   if (Platform.isWindows || Platform.isMacOS) {
     await restoreWindowOnTop();
     await restoreBossKey();

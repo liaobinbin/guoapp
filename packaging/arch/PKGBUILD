@@ -1,0 +1,30 @@
+# Maintainer: guoapp <guoapp@users.noreply.github.com>
+# 发布仓库与推送仓库不同时，修改 _repo。
+pkgname=guoapp-bin
+_repo=liaobinbin/guoapp
+pkgver=2.0.4+116
+pkgrel=1
+pkgdesc='独立运行的多端短剧应用'
+arch=('x86_64')
+url="https://github.com/${_repo}"
+license=('GPL-3.0-only')
+depends=('gtk3' 'mpv' 'json-glib' 'libepoxy' 'ffmpeg')
+provides=('guoapp')
+conflicts=('guoapp')
+options=(!strip)
+_tag="app-v${pkgver//+/-}"
+source=("guoapp-${pkgver}-linux-x64.tar.gz::${url}/releases/download/${_tag}/guoapp-${pkgver}-linux-x64.tar.gz")
+# 发布后替换为 sha256sum guoapp-${pkgver}-linux-x64.tar.gz 的输出。
+sha256sums=('SKIP')
+
+package() {
+  install -d "${pkgdir}/usr/lib/guoapp"
+  cp -a "${srcdir}/guoapp/." "${pkgdir}/usr/lib/guoapp/"
+  install -d "${pkgdir}/usr/bin"
+  ln -s ../lib/guoapp/guoapp "${pkgdir}/usr/bin/guoapp"
+  install -Dm644 "${srcdir}/guoapp.desktop" \
+    "${pkgdir}/usr/share/applications/com.guoapp.app.desktop"
+  install -Dm644 "${srcdir}/guoapp.png" \
+    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/guoapp.png"
+  install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

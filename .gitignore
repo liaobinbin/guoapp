@@ -9,6 +9,13 @@ native/build/
 android/app/src/main/jniLibs/
 windows/runner/duanju_core.dll
 windows/runner/duanju_core.h
+linux/libduanju_core.so
+linux/libduanju_core.h
+linux/flutter/generated_plugin_registrant.*
+linux/flutter/generated_plugins.cmake
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.pkg.tar.*
 ios/DuanjuCore/*.xcframework/
 .wrangler/
 *.test

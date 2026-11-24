@@ -1,10 +1,13 @@
 import argparse
+import io
 import os
 import plistlib
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -12,7 +15,7 @@ from app_build import app
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--platform', choices=['android', 'windows', 'macos'], required=True)
+parser.add_argument('--platform', choices=['android', 'linux', 'windows', 'macos'], required=True)
 parser.add_argument('--abi', action='append', choices=['arm64-v8a', 'armeabi-v7a', 'x86_64'])
 parser.add_argument('--identity', default='',
                     help='macOS 签名身份；默认 ad-hoc 签名（-），有 Developer ID 时传证书名')
@@ -166,6 +169,158 @@ def package_macos(application):
     return target
 
 
+def add_tar_member(archive, path, arcname):
+    info = archive.gettarinfo(str(path), arcname=arcname)
+    info.uid = 0
+    info.gid = 0
+    info.uname = 'root'
+    info.gname = 'root'
+    if info.isreg():
+        with path.open('rb') as handle:
+            archive.addfile(info, handle)
+    else:
+        archive.addfile(info)
+
+
+def write_debian_archive(target, members):
+    with target.open('wb') as archive:
+        archive.write(b'!<arch>\n')
+        for name, path in members:
+            data = path.read_bytes()
+            header = (f'{name + "/":<16}{0:<12}{0:<6}{0:<6}{"100644":<8}{len(data):<10}').encode()
+            archive.write(header + b'`\n')
+            archive.write(data)
+            if len(data) % 2:
+                archive.write(b'\n')
+
+
+def linux_desktop_entry():
+    return '\n'.join([
+        '[Desktop Entry]',
+        'Type=Application',
+        f'Name={app.display_name}',
+        'Comment=独立运行的多端短剧应用',
+        f'Exec={app.slug} %U',
+        f'Icon={app.slug}',
+        'Terminal=false',
+        'Categories=AudioVideo;Video;Player;',
+        f'StartupWMClass={app.bundle_identifier}',
+        '',
+    ])
+
+
+def package_linux(bundle):
+    required = [app.slug, 'libduanju_core.so', 'lib/libflutter_linux_gtk.so',
+                'lib/libapp.so', 'lib/libffmpegkit.so', 'data/icudtl.dat']
+    missing = [name for name in required if not (bundle / name).is_file()]
+    if missing:
+        raise SystemExit('Linux 安装包缺少文件：' + ', '.join(missing))
+    nm = shutil.which('nm')
+    if nm:
+        symbols = subprocess.run([nm, '-D', '--defined-only', str(bundle / 'libduanju_core.so')],
+                                 capture_output=True, text=True).stdout
+        for symbol in ['DuanjuRequest', 'DuanjuFree']:
+            if symbol not in symbols:
+                raise SystemExit('Linux 核心库缺少 FFI 入口：' + symbol)
+    icon = root / 'macos' / 'Runner' / 'Assets.xcassets' / 'AppIcon.appiconset' / 'app_icon_512.png'
+    if not icon.is_file():
+        raise SystemExit('缺少图标：' + str(icon))
+
+    staging = root / 'build' / 'linux-package'
+    if staging.exists():
+        shutil.rmtree(staging)
+    application = staging / 'usr' / 'lib' / app.slug
+    shutil.copytree(bundle, application, symlinks=True)
+    binary = staging / 'usr' / 'bin' / app.slug
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.symlink_to(f'../lib/{app.slug}/{app.slug}')
+    desktop = staging / 'usr' / 'share' / 'applications' / f'{app.bundle_identifier}.desktop'
+    desktop.parent.mkdir(parents=True)
+    desktop.write_text(linux_desktop_entry(), encoding='utf-8')
+    icon_target = staging / 'usr' / 'share' / 'icons' / 'hicolor' / '512x512' / 'apps' / f'{app.slug}.png'
+    icon_target.parent.mkdir(parents=True)
+    shutil.copy2(icon, icon_target)
+    copyright_dir = staging / 'usr' / 'share' / 'doc' / app.slug
+    copyright_dir.mkdir(parents=True)
+    shutil.copy2(root / 'LICENSE', copyright_dir / 'copyright')
+
+    installed = sum(path.stat().st_size for path in application.rglob('*') if path.is_file())
+    control = '\n'.join([
+        f'Package: {app.slug}',
+        f'Version: {version}',
+        'Section: video',
+        'Priority: optional',
+        'Architecture: amd64',
+        f'Installed-Size: {max(1, (installed + 1023) // 1024)}',
+        'Maintainer: guoapp <guoapp@users.noreply.github.com>',
+        'Depends: libc6 (>= 2.35), libgtk-3-0, libmpv2 | libmpv1, libjson-glib-1.0-0, '
+        'libepoxy0, libstdc++6, ffmpeg',
+        f'Description: {app.display_name}',
+        ' 独立运行的多端短剧应用。',
+        '',
+    ])
+
+    working = root / 'build' / 'linux-deb'
+    if working.exists():
+        shutil.rmtree(working)
+    working.mkdir(parents=True)
+    control_tar = working / 'control.tar.gz'
+    refresh = (
+        'if command -v update-desktop-database >/dev/null 2>&1; then\n'
+        '  update-desktop-database -q || true\n'
+        'fi\n'
+        'if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n'
+        '  gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true\n'
+        'fi\n'
+    )
+    with tarfile.open(control_tar, 'w:gz') as archive:
+        for name, text, mode in [
+            ('./control', control, 0o644),
+            ('./postinst', '#!/bin/sh\nset -e\n' + refresh + 'exit 0\n', 0o755),
+            ('./postrm', '#!/bin/sh\nset -e\n' + refresh + 'exit 0\n', 0o755),
+        ]:
+            data = text.encode('utf-8')
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = mode
+            info.mtime = int(time.time())
+            info.uid = info.gid = 0
+            info.uname = info.gname = 'root'
+            archive.addfile(info, io.BytesIO(data))
+    data_tar = working / 'data.tar.gz'
+    with tarfile.open(data_tar, 'w:gz') as archive:
+        for path in sorted(staging.rglob('*')):
+            add_tar_member(archive, path, './' + path.relative_to(staging).as_posix())
+    debian_binary = working / 'debian-binary'
+    debian_binary.write_text('2.0\n', encoding='ascii')
+
+    portable = output / f'{app.slug}-{version}-linux-x64.tar.gz'
+    desktop_source = working / f'{app.slug}.desktop'
+    desktop_source.write_text(linux_desktop_entry(), encoding='utf-8')
+    with tarfile.open(portable, 'w:gz') as archive:
+        add_tar_member(archive, bundle, './' + app.slug)
+        for path in sorted(bundle.rglob('*')):
+            add_tar_member(archive, path, f'./{app.slug}/{path.relative_to(bundle).as_posix()}')
+        add_tar_member(archive, desktop_source, f'./{app.slug}.desktop')
+        add_tar_member(archive, icon, f'./{app.slug}.png')
+        add_tar_member(archive, root / 'LICENSE', './LICENSE')
+
+    target = output / f'{app.slug}-{version}-linux-x64.deb'
+    write_debian_archive(target, [('debian-binary', debian_binary),
+                                  ('control.tar.gz', control_tar),
+                                  ('data.tar.gz', data_tar)])
+    if shutil.which('dpkg-deb'):
+        run(['dpkg-deb', '--info', target])
+        contents = subprocess.run(['dpkg-deb', '--contents', target], capture_output=True, text=True)
+        if contents.returncode != 0 or f'./usr/lib/{app.slug}/{app.slug}' not in contents.stdout:
+            raise SystemExit('deb 内容校验失败：' + contents.stderr.strip())
+    elif shutil.which('ar'):
+        members = subprocess.run(['ar', 't', target], capture_output=True, text=True).stdout.split()
+        if members != ['debian-binary', 'control.tar.gz', 'data.tar.gz']:
+            raise SystemExit('deb 归档校验失败：' + ' '.join(members))
+    return [portable, target]
+
+
 def windows_product_name(path):
     import ctypes
     version = ctypes.windll.version
@@ -225,6 +380,11 @@ if options.platform == 'android':
         target = output / f'{app.slug}-{version}-{abi}.apk'
         shutil.copy2(source, target)
         artifacts.append(target)
+elif options.platform == 'linux':
+    bundle = root / 'build' / 'linux' / 'x64' / 'release' / 'bundle'
+    if not bundle.is_dir():
+        raise SystemExit('缺少 Linux 应用：' + str(bundle))
+    artifacts.extend(package_linux(bundle))
 elif options.platform == 'windows':
     bundle = root / 'build' / 'windows' / 'x64' / 'runner' / 'Release'
     bundle_executable = 'guoapp.exe'
@@ -250,6 +410,8 @@ elif options.platform == 'windows':
     artifacts.append(target)
     artifacts.append(package_windows_installer(bundle, bundle_executable))
 else:
+    if options.platform != 'macos':
+        raise SystemExit('未知平台：' + options.platform)
     application = root / 'build' / 'macos' / 'Build' / 'Products' / 'Release' / 'duanju_app.app'
     if not application.is_dir():
         raise SystemExit('缺少 macOS 应用：' + str(application))
