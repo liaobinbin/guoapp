@@ -62,6 +62,10 @@ static void my_application_activate(GApplication* application) {
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
+  const gchar* renderer = g_getenv("GUOAPP_RENDERER");
+  if (g_strcmp0(renderer, "impeller") != 0) {
+    fl_dart_project_set_enable_impeller(project, FALSE);
+  }
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;

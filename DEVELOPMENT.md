@@ -61,7 +61,7 @@ Flutter 界面 + Go 原生核心。站源请求、解析、签名、缓存、下
 
 - **FFI**：`native/bridge` 以 `-buildmode=c-shared` 只导出 `DuanjuRequest(json) -> json` 与 `DuanjuFree`。`lib/core_bridge.dart` 的 `NativeRepository` 把每次调用编码成 `{"action": ...}`，在 `Isolate.run` 中调用；Go 侧在 `native/core/app_runtime.go` 的 `NativeRequest` 里按 action 分派。新增能力两端都要改。Android、Linux 与 Windows 动态加载（Android 为 `libduanju_core.so`，Linux 为可执行文件旁的 `libduanju_core.so`，Windows 为 `duanju_core.dll`）；iOS 与 macOS 改成 `-buildmode=c-archive` 静态库（`ios/DuanjuCore`、`macos/DuanjuCore`）链进主程序，Dart 侧用 `DynamicLibrary.process()` 查符号，避免 dylib 的签名与库校验问题。
 - **Go 核心**：`native/core` 是运行时。站源模块由 `module_loader.go` 读取清单并注册，`module_script.go` 用 [goja](https://github.com/dop251/goja) 执行并适配成内部的 `Provider` 接口。`app_*.go` 运行时与业务（目录缓存、下载、弹幕、存储、设置），`network_*.go` HTTP 客户端、DNS、CDN、限流。`app_stream.go` 在本机起播放代理，重写 HLS playlist、透传 Range，并处理带密钥的媒体。
-- **Flutter**：界面在 `lib/ui/`（按页面分子目录，入口 `lib/main.dart` → `lib/ui/app.dart`），逻辑层平铺在 `lib/`，状态管理只用 ChangeNotifier。
+- **Flutter**：界面在 `lib/ui/`（按页面分子目录，入口 `lib/main.dart` → `lib/ui/app.dart`），逻辑层平铺在 `lib/`，状态管理只用 ChangeNotifier。Linux 桌面默认关闭 Impeller（`linux/runner/my_application.cc` 调 `fl_dart_project_set_enable_impeller(FALSE)`）改用 Skia；需要 Impeller 时设置环境变量 `GUOAPP_RENDERER=impeller`。GTK 在 1.25 等分数缩放下按 2 倍缩放因子渲染，Wayland 比 X11 的呈现路径快。
 - **播放与下载**：播放器用 [media_kit](https://github.com/media-kit/media-kit) / libmpv；每集下载完由 [FFmpegKit min-gpl](https://github.com/sk3llo/ffmpeg_kit_flutter)（含 GPL 媒体组件）转成单个 mp4，只换封装、不重新编码，不参与正常播放。Linux 改用系统的 `ffmpeg` / `ffprobe`（`lib/media_pipeline.dart` 的 `SystemFFmpegExecutor`），避免预编译库依赖各发行版的 codec soname；Linux 包仍会带上 FFmpegKit 插件，在缺少 `libx265.so.199` / `libvidstab.so.1.1` 的发行版上启动会打印一条 dlopen 警告，不影响功能。
 - **本地数据**：存储格式须兼容旧版。本地快照遇到未知键会整体报错，新增设置若要兼容旧版须存为快照外的独立键。
 
